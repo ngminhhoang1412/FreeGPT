@@ -6,8 +6,10 @@ from selenium.webdriver.common.by import By
 from queue import Queue
 import threading
 from functools import wraps
+from selenium.webdriver.support import expected_conditions as EC
 import login_gmail_selenium.util as LGS_util
 import login_gmail_selenium.common as LGS_common
+from selenium.webdriver.support.wait import WebDriverWait
 
 app = Flask(__name__)
 request_queue = Queue()
@@ -25,9 +27,6 @@ def encode_non_bmp(text):
     return encoded_text
 
 
-BEARER_TOKEN = "your_bearer_token"
-
-
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -37,7 +36,7 @@ def token_required(f):
             auth_header = request.headers['Authorization']
             token = auth_header.split(' ')[1]
 
-        if not token or token != BEARER_TOKEN:
+        if not token or token != os.getenv('TOKEN'):
             return {'message': 'Unauthorized'}, 401
 
         return f(*args, **kwargs)
@@ -45,7 +44,7 @@ def token_required(f):
     return decorated
 
 
-@app.route('/', methods=['POST'])
+@app.route('/api', methods=['POST'])
 @token_required
 def handle_request():
     with lock:
@@ -58,21 +57,38 @@ def handle_request():
             profile = LGS_util.profiles.Profile(
                 'private',
                 None,
-                '77.91.73.18:10002:dOKnD:WycLb',
+                os.getenv('PROXY'),
                 'http',
                 proxy_folder)
             driver = profile.retrieve_driver()
             profile.start()
-            driver.get('https://chat.openai.com/c/7a0d9576-c7de-422f-8220-113629036538')
-            time.sleep(10)
-            input_field = driver.find_element(By.ID, 'prompt-textarea')
-            input_field.send_keys(text)
-            input_field.send_keys(Keys.RETURN)
-            time.sleep(20)
-            elements = driver.find_elements(By.CLASS_NAME, 'markdown')
-            last_element = elements[-1].text
-            last_element = last_element.split('JAILBREAK] ')[1]
-            driver.quit()
+            driver.get(os.getenv('GPT_URL'))
+            try:
+                driver.find_element(By.XPATH, '//*[@id="__next"]/div[1]/div[1]/div[4]/button[1]').click()
+                username = WebDriverWait(driver, 10).until(
+                    EC.visibility_of_element_located((By.ID, "username")))
+                username.send_keys(os.getenv('USERNAME_GPT', "thamkhang2003@gmail.com"))
+                login_btn = driver.find_element(By.CLASS_NAME, 'cf772ffae')
+                login_btn.click()
+                password = WebDriverWait(driver, 10).until(
+                    EC.visibility_of_element_located((By.ID, "password")))
+                password.send_keys(os.getenv('PASSWORD', "thamkhang2003"))
+                login_btn = driver.find_element(By.CLASS_NAME, 'cf772ffae')
+                login_btn.click()
+            except Exception:
+                pass
+            finally:
+                time.sleep(10)
+                input_field = driver.find_element(By.ID, 'prompt-textarea')
+                input_field.send_keys(text)
+                input_field.send_keys(Keys.RETURN)
+                time.sleep(20)
+                try:
+                    elements = driver.find_elements(By.CLASS_NAME, 'markdown')
+                    last_element = elements[-1].text
+                    last_element = last_element.split('JAILBREAK] ')[1]
+                finally:
+                    driver.quit()
 
         response = {"message": "Success", "data": last_element}
         return jsonify(response)
